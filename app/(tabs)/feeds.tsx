@@ -1,45 +1,46 @@
 import React, { useState, useEffect } from "react";
-import { ScrollView, StyleSheet, Text, View, SafeAreaView } from "react-native";
-import SingleImagePost from "@/components/posts/singleImagePost";
-import Header from "@/components/layout_components/header";
-import CirlesHolder from "@/components/circles_holder";
-
-
-
-
-export interface PostDataInterface {
-  post_name: string;
-  post_caption: string;
-  post_time: string;
-  post_user_id: string;
-  post_image_url: string;
-  post_user_name: string;
-}
+import { ScrollView, StyleSheet, Text, View } from "react-native";
+import SingleImagePost from "@/components/elements/singleImagePost";
+import { PostDataInterface } from "@/components/interfaces";
+import { useTheme } from "@react-navigation/native";
+import { style } from "@/style/global.css";
+import { styles as postStyles } from "@/style/post.css";
+import { useNavigation } from "expo-router";
 
 export default function Feed() {
   const [postData, setPostData] = useState<PostDataInterface[] | null>(null);
-
-  const getData = async () => {
-    const res = await fetch(
-      "https://minimal-blog-ivory.vercel.app/api/get_posts"
-    );
-    const resJson = await res.json();
-    setPostData(resJson.postData);
-  };
-
+  const { colors } = useTheme();
+  const navigation = useNavigation();
   useEffect(() => {
+    const getData = async () => {
+      const res = await fetch(
+        "https://minimal-blog-ivory.vercel.app/api/get_posts?page=0&limit=5",
+        {
+          method: "GET",
+          headers: {
+            Origin: "http://localhost:8081", // Set the appropriate origin here
+          },
+        }
+      );
+      const resJson = await res.json();
+      setPostData(resJson.postData);
+    };
     getData();
   }, []);
 
   return (
-    <SafeAreaView style={styles.safearea}>
+    <View style={style.container}>
       <ScrollView
         showsVerticalScrollIndicator={false}
         showsHorizontalScrollIndicator={false}
       >
-        <Header />
-        <CirlesHolder />
-        <View style={styles.post_container}>
+        <View style={styles.header}>
+          <Text style={[style.centerText, { color: colors.text }]}>
+            Minimal Blog
+          </Text>
+        </View>
+
+        <View style={postStyles.post_container}>
           {postData?.map((post) => {
             return (
               <SingleImagePost
@@ -50,21 +51,12 @@ export default function Feed() {
           })}
         </View>
       </ScrollView>
-    </SafeAreaView>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  safearea: {
-    marginTop: 20,
-    backgroundColor: "inherit",
-    position: "relative",
-    width: "100%",
-  },
-  post_container: {
-    display: "flex",
-    alignItems: "center",
-    gap: 20,
-    paddingBottom: 100,
+  header: {
+    padding: 10,
   },
 });

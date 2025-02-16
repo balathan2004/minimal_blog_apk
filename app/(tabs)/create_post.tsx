@@ -1,99 +1,81 @@
-import React, { useState, useEffect, FC, useContext } from "react";
-import { useSelector, UseSelector } from "react-redux";
+import React, { useState, useEffect, FC } from "react";
+import { styles } from "@/style/create_post.css";
+import MaterialIcons from "@expo/vector-icons/MaterialIcons";
+import { style as globalStyle } from "@/style/global.css";
 import {
-  SafeAreaView,
   View,
   Text,
   Image,
-  StyleSheet,
-  Pressable,
-  PermissionsAndroid,
-  Platform,
   Alert,
   TextInput,
   NativeSyntheticEvent,
   TextInputChangeEventData,
   Button,
+  TouchableOpacity,
 } from "react-native";
-import { launchImageLibrary } from "react-native-image-picker";
-import { RootState } from "@/components/redux-config/store";
-import { UserDataInterface } from "@/components/interfaces";
 import SendFile from "@/components/fetching/sendFile";
-import { ReplyProviderContext } from "@/components/context/replyContext";
-import { ResponseConfig } from "@/components/interfaces";
-import { router } from "expo-router";
+import { useRouter } from "expo-router";
+import { useReplyContext } from "@/components/context/replyContext";
+import * as MediaLibrary from "expo-media-library";
+import * as ImagePicker from "expo-image-picker";
+import { useUserContext } from "@/components/context/userContext";
+import { useTheme } from "@react-navigation/native";
 
 const CreatePost: FC = () => {
-  const USERCRED = useSelector(
-    (state: RootState) => state.USERCRED as UserDataInterface
-  );
-  const [userData, setUserData] = useState<UserDataInterface | null>();
+  const { userCred } = useUserContext();
+
   const [caption, setCaption] = useState("");
-  const {setReply}=ReplyProviderContext();
-  const [image,setImage]=useState<File|null>(null);
+  const { setReply } = useReplyContext();
+  const [image, setImage] = useState<ImagePicker.ImagePickerAsset | null>(null);
   const [showImage, SetShowImage] = useState<string | null>(null);
+  const [hasPermission, setHasPermission] = useState<boolean | null>(null);
+  const [message, setMessage] = useState<string>("");
+  const router = useRouter();
+  const { colors } = useTheme();
 
-  const requestPermission = async () => {
-    console.log("Request permission");
-    console.log(Platform.OS);
-    if (Platform.OS === "android") {
-      console.log("if to get permission");
+  useEffect(() => {
+    // Check for permissions on component mount
+    (async () => {
+      const { status } = await MediaLibrary.requestPermissionsAsync();
+      setHasPermission(status === "granted");
+    })();
+  }, []);
 
-      try {
-        console.log("try to get permission");
-        const granted = await PermissionsAndroid.request(
-          PermissionsAndroid.PERMISSIONS.READ_EXTERNAL_STORAGE,
-          {
-            title: "Storage Permission",
-            message: "This app needs access to your storage to pick images.",
-            buttonPositive: "OK",
-          }
-        );
-        console.log("Storage permission granted");
-        return granted === PermissionsAndroid.RESULTS.GRANTED;
-      } catch (err) {
-        console.warn(err);
-        console.log("Storage permission denied");
-        return false;
-      }
-    }
-    console.log("permissions finished");
-    return true;
-  };
-
-  const PickImage = async () => {
-    const hasPermission = await requestPermission();
-    if (!hasPermission) {
-      console.log("Permission denied");
+  const openImagePicker = async () => {
+    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (status !== "granted") {
       Alert.alert(
-        "Permission Denied",
-        "You need to allow storage permission to pick an image."
+        "Permission Required",
+        "Grant gallery access to select media."
       );
       return;
     }
 
-    console.log("Permission granted");
-    launchImageLibrary({ mediaType: "photo" }, async (res) => {
-      if (res.didCancel) {
-        console.log("User canceled image picker");
-      } else if (res.errorMessage) {
-        console.log("Error retrieving image", res.errorMessage);
-      } else if (res.assets && res.assets.length > 0 ) {
-        const { uri, fileName, type } = res.assets[0];
-        if (uri) {
-          const res = await fetch(uri);
-          const blob = await res.blob();
-          const file = new File([blob], fileName || "image.jpg", {
-            type: "image/jpeg",
-          });
-         
-          setImage(file);
-          SetShowImage(uri);
-        }
-
-        console.log(uri, fileName, type);
-      }
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: "images", // Use the updated MediaType enum
+      allowsMultipleSelection: false, // Restrict to selecting only one file
+      quality: 1, // Full-quality image
     });
+
+    if (!result.canceled) {
+      // Convert the image to a Blob
+      SetShowImage(result.assets[0].uri);
+
+      setImage(result.assets[0]);
+    }
+  };
+
+  const handleRequestPermission = async () => {
+    const { status } = await MediaLibrary.requestPermissionsAsync();
+    setHasPermission(status === "granted");
+
+    if (status === "granted") {
+      // Alert.alert("Permission Granted", "Gallery access granted.");
+      openImagePicker();
+      // imagePicker();
+    } else {
+      Alert.alert("Permission Denied", "Gallery access is restricted.");
+    }
   };
 
   const handleInput = (
@@ -102,112 +84,96 @@ const CreatePost: FC = () => {
     setCaption(event.nativeEvent.text);
   };
 
-  const handleSubmit=async ()=>{
-    if(userData&& caption && image && image){
+  const handleSubmit = async () => {
+    if (image && userCred && caption) {
+      try {
+        const formData = new FormData();
 
-      setReply("post sent successfully")
-      const form = new FormData();
-      form.append("file", image);
-      form.append("caption", caption);
-      form.append("userId", userData.uid);
-      form.append("username", userData.display_name);
-      const res=await SendFile({data:form,route:"https://minimal-blog-ivory.vercel.app/api/create"})
-    
-      if(res){
-        console.log(res)
-        if(res.status==200){
+        const file = {
+          uri: image.uri,
+          name: image.fileName,
+          type: image.mimeType,
+        };
+
+        formData.append("file", file as any);
+        formData.append("caption", caption);
+        formData.append("userId", userCred.uid);
+        formData.append("username", userCred.display_name);
+
+        const res = await SendFile({
+          data: formData,
+          route:
+            "https://file-handler-server-production.up.railway.app/minimal_blog/create_post",
+        });
+
+        if (res.status === 200) {
           setReply(res.message);
-          //router.push('/(tabs)/feeds')
+          setMessage("post created successfully");
+          router.push("/(tabs)/feeds");
+          // Handle successful post submission, e.g., navigate to a different screen
+        } else {
+          setReply(res.message); // Handle error message from server
+          setMessage(res.message);
         }
-        setReply(res.message)
-        
+      } catch (error) {
+        console.error(error);
+        setReply("An error occurred. Please try again."); // Display a generic error message to the user
+      } finally {
+        // setIsLoading(false); // Hide loading indicator
       }
-  
+    } else {
+      setMessage("Please Fill All Fields");
+      setTimeout(() => {
+        setMessage("");
+      }, 5000);
     }
-    
-
-  }
-
-  useEffect(() => {
-    if (USERCRED) {
-      setUserData(USERCRED);
-    }
-  }, [USERCRED]);
+  };
 
   return (
-    <SafeAreaView style={styles.safearea}>
-      <Pressable onPress={PickImage}>
-        <Text style={styles.label}>Select Image</Text>
-      </Pressable>
+    <View style={globalStyle.container}>
+      <View style={styles.container}>
+        <View>
+          <Text style={[styles.title, { color: colors.text }]}>
+            Create post
+          </Text>
+          <Text style={[styles.label, { color: colors.text }]}>
+            {message ? message : ""}
+          </Text>
+        </View>
 
-      {showImage ? (
-        <Image style={styles.image} source={{ uri: showImage }}></Image>
-      ) : (
-        <Text>No image selected</Text>
-      )}
+        <View style={styles.input_container}>
+          <TouchableOpacity
+            style={styles.select_btn}
+            onPress={handleRequestPermission}
+          >
+            <MaterialIcons name="cloud-upload" size={24} color="black" />
+            <Text style={[styles.select_txt, { color: colors.text }]}>
+              Select image
+            </Text>
+          </TouchableOpacity>
 
-      <Text>Type Something</Text>
-      <TextInput style={styles.input} onChange={handleInput}></TextInput>
-    <Button title="Post" onPress={handleSubmit}></Button>
-    </SafeAreaView>
+          {showImage ? (
+            <Image style={styles.image} source={{ uri: showImage }}></Image>
+          ) : (
+            <Text style={[styles.label, { color: colors.text }]}>
+              No image selected
+            </Text>
+          )}
+        </View>
+
+        <View style={styles.input_container}>
+          <Text style={[styles.label, { color: colors.text }]}>
+            Type something
+          </Text>
+          <TextInput
+            style={[styles.input, { borderColor: colors.text }]}
+            onChange={handleInput}
+          ></TextInput>
+          <Button title="Post" onPress={handleSubmit}></Button>
+        </View>
+      </View>
+    </View>
   );
 };
 
 export default CreatePost;
-
-const styles = StyleSheet.create({
-  safearea: {
-    marginTop: 50,
-    backgroundColor: "inherit",
-    position: "relative",
-    width: "100%",
-    display: "flex",
-    height: "100%",
-  },
-  auth_container: {
-    flex: 1,
-    display: "flex",
-    justifyContent: "center",
-    gap: 20,
-    paddingBottom: 100,
-  },
-  input_container: {
-    display: "flex",
-    width: "75%",
-    gap: 5,
-    margin: "auto",
-  },
-  image: {
-    height: 400,
-    width: 400,
-  },
-
-  title: {
-    textAlign: "center",
-    marginBottom: 10,
-    lineHeight: 50,
-    fontSize: 22,
-  },
-  label: {
-    marginBottom: 10,
-    fontSize: 22,
-    lineHeight: 50,
-  },
-  forget_password: {
-    textAlign: "center",
-    lineHeight: 50,
-    fontSize: 18,
-  },
-  button: {
-    marginTop: 20,
-    width: "75%",
-    margin: "auto",
-  },
-  input: {
-    height: 40,
-    borderWidth: 1,
-    borderBlockColor: "black",
-    borderRadius: 4,
-    paddingLeft: 5,
-  },
-});

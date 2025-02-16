@@ -1,6 +1,6 @@
 import React, { FC, useEffect } from "react";
 import { View,Text,StyleSheet } from "react-native";
-import { ReplyProviderContext } from "../context/replyContext";
+import { useReplyContext } from "../context/replyContext";
 
 interface Props {
   reply: string | false;
@@ -8,7 +8,7 @@ interface Props {
 
 const ReplyPopup: FC = () => {
 
-    const {reply,setReply}=ReplyProviderContext();
+    const {reply,setReply}=useReplyContext();
 
     useEffect(()=>{
         if(reply){
@@ -16,7 +16,7 @@ const ReplyPopup: FC = () => {
                 setReply(false);
             }, 3000);
         }
-    },[])
+    },[reply])
 
   if (reply) {
     return (
